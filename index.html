@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Indian Battles & Operations — Interactive Timeline</title>
+  <!-- Military + Futuristic theme refresh
+       - Deep camo palette, animated hex grid & radar sweep background
+       - Neon accents, glass cards, refined animations
+       - All features preserved (search, filters, layout, Leaflet map) -->
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <style>
+    :root{
+      /* Military camo palette + neon HUD accent */
+      --camo-1:#0e1c14; /* deep forest */
+      --camo-2:#16251b; /* pine */
+      --camo-3:#2b3b27; /* olive */
+      --camo-4:#445237; /* moss */
+      --camo-5:#7a6b3c; /* khaki */
+      --hud:#07f7a2;   /* neon HUD green */
+      --hud-2:#39c5ff; /* cyan secondary */
+      --muted:#a7b5a8; /* desaturated military grey-green */
+      --card:#0c1310;  /* dark panel */
+      --text:#e9f5ee;
+      --glass: rgba(255,255,255,0.04);
+      --glass-2: rgba(7,247,162,0.12);
+      font-family:'Inter',system-ui,Arial,sans-serif;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;color:var(--text);background:var(--camo-1);overflow-x:hidden}
+
+    /* ===== Background Layers (futuristic HUD) ===== */
+    .bg-layers{position:fixed;inset:0;z-index:-1;pointer-events:none}
+    /* Camouflage blobs */
+    .bg-layers::before{content:"";position:absolute;inset:0;background:
+      radial-gradient(1200px 700px at 80% 10%, rgba(68,82,55,0.45), transparent 60%),
+      radial-gradient(900px 500px at 10% 20%, rgba(43,59,39,0.45), transparent 60%),
+      radial-gradient(700px 400px at 80% 80%, rgba(122,107,60,0.25), transparent 65%),
+      linear-gradient(180deg,var(--camo-2),var(--camo-1));
+      filter:contrast(1.02) saturate(0.9);
+    }
+    /* Animated hex grid */
+    .hex-grid{position:absolute;inset:0;opacity:0.17;mix-blend:screen;background-size:60px 52px;background-position:0 0;animation:gridPan 40s linear infinite}
+    .hex-grid{background-image:
+      radial-gradient(circle at 50% 28%, rgba(57,197,255,0.18) 12%, transparent 13%),
+      radial-gradient(circle at 0 50%, rgba(57,197,255,0.18) 12%, transparent 13%),
+      radial-gradient(circle at 100% 50%, rgba(57,197,255,0.18) 12%, transparent 13%),
+      radial-gradient(circle at 50% 72%, rgba(57,197,255,0.18) 12%, transparent 13%);
+    }
+    @keyframes gridPan{from{background-position:0 0}to{background-position:120px 104px}}
+    /* Radar sweep */
+    .radar{position:absolute;right:-20vw;top:-20vw;width:60vw;height:60vw;border-radius:50%;background:
+      radial-gradient(circle at center, rgba(7,247,162,0.12) 0 28%, transparent 29%),
+      radial-gradient(circle at center, rgba(7,247,162,0.08) 0 46%, transparent 47%),
+      radial-gradient(circle at center, rgba(7,247,162,0.05) 0 64%, transparent 65%);
+      overflow:hidden;filter:blur(0.3px)}
+    .radar::after{content:"";position:absolute;inset:-5%;background:conic-gradient(from 0deg, rgba(7,247,162,0.22), rgba(7,247,162,0.02) 35%, transparent 60%);animation:sweep 8s linear infinite}
+    @keyframes sweep{to{transform:rotate(360deg)}}
+    /* Subtle noise */
+    .grain{position:absolute;inset:0;opacity:.08;background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2"/></filter><rect width="100%" height="100%" filter="url(%23n)" opacity="0.35"/></svg>')}
+
+    /* ===== Header ===== */
+    header{display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06);backdrop-filter: blur(6px);background:linear-gradient(180deg,rgba(0,0,0,0.35),rgba(0,0,0,0.0))}
+    .brand{display:flex;align-items:center;gap:12px}
+    .flag{width:54px;height:36px;border-radius:6px;overflow:hidden;box-shadow:0 8px 26px rgba(0,0,0,0.6)}
+    h1{font-size:1.06rem;margin:0;letter-spacing:.4px}
+    .sub{font-size:.82rem;color:var(--muted)}
+    .controls{margin-left:auto;display:flex;gap:10px;align-items:center}
+    .btn{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.0));border:1px solid var(--glass);padding:10px 12px;border-radius:12px;color:var(--text);cursor:pointer;transition:all .25s;box-shadow:0 0 0 0 rgba(7,247,162,0.0)}
+    .btn:hover{border-color:var(--glass-2);box-shadow:0 0 0 2px rgba(7,247,162,0.08)}
+    .btn.primary{background:linear-gradient(90deg,rgba(7,247,162,0.18),rgba(57,197,255,0.18));border-color:rgba(7,247,162,0.35)}
+
+    main{display:grid;grid-template-columns: 1fr 400px;gap:20px;padding:20px;align-items:start}
+    @media(max-width:1060px){main{grid-template-columns:1fr 1fr}}
+    @media(max-width:860px){main{grid-template-columns:1fr}.side{order:2}}
+
+    .panel{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.04));border-radius:16px;padding:14px;border:1px solid rgba(255,255,255,0.06)}
+
+    /* ===== Search & Filters ===== */
+    .searchbar{display:flex;gap:8px}
+    .searchbar input{flex:1;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(0,0,0,0.25);color:var(--text);outline:none;transition:.25s}
+    .searchbar input:focus{border-color:var(--hud)}
+    .filters{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    label.filter{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,0.02);cursor:pointer;border:1px dashed rgba(255,255,255,0.06)}
+
+    /* ===== Timeline ===== */
+    .timeline-wrap{height:78vh;overflow:auto;padding:12px}
+    .timeline{display:flex;flex-direction:column;gap:18px;padding:10px;transition:all .3s ease}
+    .node{display:flex;gap:14px;align-items:flex-start;padding:18px;border-radius:14px;border:1px solid rgba(7,247,162,0.10);background:
+      linear-gradient(180deg,rgba(7,247,162,0.05),rgba(0,0,0,0.06)),
+      linear-gradient(135deg,rgba(68,82,55,0.18),rgba(12,19,16,0.4));
+      transition:transform .28s cubic-bezier(.2,.9,.2,1),box-shadow .28s,border-color .28s}
+    .node:hover{transform:translateY(-8px);box-shadow:0 18px 40px rgba(2,6,23,0.6);border-color:rgba(57,197,255,0.25)}
+    .dot{width:14px;height:14px;border-radius:50%;flex:0 0 14px;margin-top:8px;box-shadow:0 0 0 2px rgba(7,247,162,0.25)}
+    .content{flex:1}
+    .title{display:flex;justify-content:space-between;gap:12px;align-items:start}
+    h3{margin:0;font-size:1rem}
+    .meta{font-size:0.85rem;color:var(--muted)}
+    .summary{margin:8px 0;font-size:0.96rem;color:#dfe9e4}
+    .tags{display:flex;gap:8px;flex-wrap:wrap}
+    .tag{font-size:0.78rem;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.03);color:var(--muted);border:1px solid rgba(255,255,255,0.06)}
+
+    .more{margin-top:12px;border-top:1px dashed rgba(255,255,255,0.08);padding-top:12px;display:none}
+    .more.open{display:block;animation:fadeIn .32s ease}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+    /* ===== Right side ===== */
+    .side{position:sticky;top:18px;height:78vh;overflow:auto}
+    .battle-card h2{margin:0 0 6px 0}
+    .video{margin-top:12px}
+
+    /* ===== Map ===== */
+    #map{height:270px;border-radius:12px;margin-top:12px;border:1px solid rgba(255,255,255,0.06);box-shadow:0 0 0 1px rgba(7,247,162,0.12)}
+
+    /* ===== Branch badges ===== */
+    .badge{display:inline-block;padding:6px 10px;border-radius:999px;font-weight:700;font-size:0.82rem;border:1px solid rgba(255,255,255,0.08);box-shadow:inset 0 0 12px rgba(7,247,162,0.10)}
+    .army{background:linear-gradient(90deg,#274b1f,#3b7a2b)}
+    .navy{background:linear-gradient(90deg,#05324b,#0a6b8a)}
+    .air{background:linear-gradient(90deg,#352b6a,#6b4bd6)}
+    .joint{background:linear-gradient(90deg,#4b4b4b,#6f6f6f)}
+
+    /* ===== Horizontal mode ===== */
+    .timeline.horizontal{flex-direction:row;overflow-x:auto;align-items:flex-start}
+    .timeline.horizontal .node{min-width:360px;flex-direction:column}
+
+    /* ===== Futuristic camo accent strip */
+    .camo-strip{height:8px;background:linear-gradient(90deg,rgba(7,247,162,0.35),rgba(57,197,255,0.35));border-radius:8px;margin-bottom:12px;box-shadow:0 0 14px rgba(7,247,162,0.25), inset 0 -1px 0 rgba(255,255,255,0.06)}
+
+    footer{padding:12px;text-align:center;color:var(--muted);font-size:0.85rem}
+  </style>
+</head>
+<body>
+  <!-- Futuristic military background layers -->
+  <div class="bg-layers">
+    <div class="hex-grid"></div>
+    <div class="radar"></div>
+    <div class="grain"></div>
+  </div>
+
+  <header>
+    <div class="brand">
+      <div class="flag" title="Indian Tricolor">
+        <svg viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg">
+          <rect width="300" height="66.66" fill="#FF9933"/>
+          <rect y="66.66" width="300" height="66.66" fill="#FFFFFF"/>
+          <rect y="133.32" width="300" height="66.68" fill="#138808"/>
+          <circle cx="150" cy="100" r="22" fill="#0b3a66" />
+        </svg>
+      </div>
+      <div>
+        <h1>Indian Battles & Operations Timeline</h1>
+        <div class="sub">Military camo theme • HUD accents • Smooth micro‑interactions</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="searchbar panel">
+        <input id="search" placeholder="Search battle name, year, or location... ( / to focus )" />
+        <button id="clearSearch" class="btn">Clear</button>
+      </div>
+      <button id="toggleView" class="btn primary">Toggle Horizontal</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel timeline-wrap">
+      <div class="camo-strip"></div>
+      <div style="display:flex;gap:12px;align-items:center;justify-content:space-between">
+        <div>
+          <strong>Timeline</strong>
+          <div style="font-size:0.82rem;color:var(--muted)">Click a node to expand "More Info" and view embedded documentary/explainers.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="filters" id="branchFilters">
+            <label class="filter" style="border-color:rgba(47,122,50,.3)"><input type="checkbox" value="Army" checked/> Army</label>
+            <label class="filter" style="border-color:rgba(11,90,122,.3)"><input type="checkbox" value="Navy" checked/> Navy</label>
+            <label class="filter" style="border-color:rgba(91,72,184,.3)"><input type="checkbox" value="Air Force" checked/> Air Force</label>
+            <label class="filter" style="border-color:rgba(111,111,111,.3)"><input type="checkbox" value="Joint" checked/> Joint</label>
+          </div>
+          <div style="margin-left:8px;font-size:0.85rem;color:var(--muted)">Sort:</div>
+          <select id="sort" class="btn" style="min-width:160px">
+            <option value="chron">Chronological</option>
+            <option value="branch">By Branch</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="timeline" class="timeline panel" aria-live="polite"></div>
+    </section>
+
+    <aside class="side panel">
+      <div class="battle-card" id="detailCard">
+        <h2>Select a battle</h2>
+        <div class="meta">Click any timeline node to see full details, map, and video.</div>
+      </div>
+      <div id="map" style="display:none"></div>
+    </aside>
+  </main>
+
+  <footer>
+    Data: Expanded entries. Update the `battles` array in the script to add more items. Videos are embedded from YouTube.
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // --- Data (unchanged from last step) ---
+    const battles = [
+      {id:1,name:'First Kashmir War (Indo-Pak 1947–48)',date:'Oct 1947 – Jan 1949',year:1947,location:'Jammu & Kashmir',lat:34.0837,lng:74.7973,summary:'The first large-scale conflict after partition over princely state of Jammu & Kashmir.',result:'UN ceasefire; ceasefire line established (later LOC)',branch:'Army',details:`In late 1947, tribal militias and Pakistani forces advanced into Kashmir, prompting the Maharaja to accede to India. Indian forces airlifted troops to Srinagar and a prolonged campaign followed. The conflict saw mobile mountain warfare, sieges and diplomatic intervention by the UN that led to a ceasefire in early 1949. The war set the stage for decades of dispute over the region.`,youtube:'https://www.youtube.com/embed/xcBOncz8HTY'},
+      {id:2,name:'Hyderabad Police Action (Operation Polo)',date:'September 1948',year:1948,location:'Hyderabad (Deccan)',lat:17.3850,lng:78.4867,summary:'Short operation to integrate the princely state of Hyderabad into India.',result:'Hyderabad integrated into Indian Union',branch:'Army',details:`Operation Polo — often called the "Police Action" — was a brief military operation in September 1948. The Indian Army moved to end the Nizam's rule following civil unrest and claims of misgovernance. The operation lasted about five days with relatively limited conventional combat, resulting in surrender and political integration.`,youtube:'https://www.youtube.com/embed/S3E_4H2EXYQ'},
+      {id:3,name:'Operation Vijay (Annexation of Goa)',date:'December 1961',year:1961,location:'Goa, Daman & Diu',lat:15.2993,lng:74.1239,summary:'India’s operation to end Portuguese colonial rule in Goa and liberate the territory.',result:'Goa integrated into India',branch:'Joint',details:`Operation Vijay (1961) was a combined land, sea and air operation that dislodged the remaining Portuguese forces ruling Goa, Daman and Diu. It was brief and used overwhelming Indian force to achieve a political objective — the end of colonial administration.`,youtube:'https://www.youtube.com/embed/-2Kf4mvz49w'},
+      {id:4,name:'Sino-Indian War',date:'Oct 1962',year:1962,location:'NEFA / Aksai Chin',lat:34.75,lng:78.4167,summary:'Border war with China in the Himalayas, exposing gaps in Indian preparedness.',result:'Chinese tactical victory; ceasefire and Line of Actual Control',branch:'Army',details:`The 1962 Sino-Indian War was fought in two main sectors: NEFA (now Arunachal Pradesh) and Aksai Chin. Difficult terrain, logistics challenges, and disputed borders led to rapid Chinese offensives and territorial gains. The conflict prompted major reforms in India’s defense posture and infrastructure in border regions. Notable actions include fighting at Rezang La.`,youtube:'https://www.youtube.com/embed/1-h2bNkTRSM'},
+      {id:5,name:'Indo-Pak War (1965)',date:'Aug–Sept 1965',year:1965,location:'Punjab & Kashmir sectors',lat:31.5204,lng:74.3587,summary:'Full-scale conventional war between India and Pakistan featuring armour and air battles.',result:'UN-mediated ceasefire; Tashkent Agreement',branch:'Army',details:`The 1965 conflict followed Pakistan's operations Gibraltar and Grand Slam aimed at inciting insurgency in Kashmir. Significant tank battles occurred (Phillora, Chawinda), alongside intense air engagements. The war ended with a UN ceasefire and diplomatic talks.`,youtube:'https://www.youtube.com/embed/suXidG1peSA'},
+      {id:6,name:'Indo-Pak War & Naval Ops (1971) — incl. Operation Trident',date:'Dec 1971',year:1971,location:'East Pakistan & Arabian Sea',lat:23.685,lng:90.3563,summary:'Decisive multi-domain war leading to creation of Bangladesh; bold naval strikes on Karachi.',result:'Decisive Indian victory; Bangladesh independence',branch:'Joint',details:`The December 1971 war combined coordinated Army, Navy and Air Force operations. In the east, rapid offensives led to surrender of Pakistani forces and the birth of Bangladesh. At sea, Operation Trident and follow-on actions damaged Karachi’s naval capability, underscoring Indian Navy initiative.`,youtube:'https://www.youtube.com/embed/HsSP2m_ikTI'},
+      {id:7,name:'Operation Meghdoot (Siachen)',date:'April 1984 — Present',year:1984,location:'Siachen Glacier, Ladakh',lat:35.3573,lng:77.519,summary:'Pre-emptive occupation of key Siachen heights; longest ongoing high-altitude deployment.',result:'India holds key positions; long-term deployment',branch:'Army',details:`Launched in April 1984, Operation Meghdoot saw Indian forces secure key passes and heights on the Siachen Glacier to preempt Pakistani moves. Extreme altitude, weather casualties, and logistics complexity made Siachen one of the harshest operational theatres. The deployment continues as a strategic stalemate.`,youtube:'https://www.youtube.com/embed/3Q7AC66O8nU'},
+      {id:8,name:'Operation Pawan / IPKF (Sri Lanka)',date:'1987–1990',year:1987,location:'Sri Lanka (Jaffna & others)',lat:9.6615,lng:80.0255,summary:'IPKF deployed to implement accord and fight LTTE — complex urban and jungle operations.',result:'IPKF withdrew in 1990 after heavy fighting and political controversy',branch:'Army',details:`Following the Indo-Sri Lanka Accord (1987), India deployed the IPKF to enforce peace and disarm militant groups. The force became embroiled in heavy combat with the LTTE in urban and jungle settings. Casualties, operational difficulties and political fallout led to phased withdrawal by 1990.`,youtube:'https://www.youtube.com/embed/or8wfL5E3Ho'},
+      {id:9,name:'Operation Cactus (Maldives)',date:'Nov 1988',year:1988,location:'Malé, Maldives',lat:4.1755,lng:73.5093,summary:'Rapid air-sea deployment to foil a coup and restore legitimate government.',result:'Successful restoration of government; speedy stabilization',branch:'Joint',details:`In November 1988, a coup attempt in Maldives was thwarted by a swift Indian response involving paratroopers, naval assets and transport aircraft. The operation demonstrated India’s ability to project force and secure neighbouring island states quickly.`,youtube:'https://www.youtube.com/embed/S8m2kIauemg'},
+      {id:10,name:'Kargil Conflict (1999)',date:'May–July 1999',year:1999,location:'Kargil, Jammu & Kashmir',lat:34.557,lng:76.1176,summary:'High-altitude conflict to evict infiltrators occupying key ridgelines in Kargil.',result:'Indian tactical victory; positions recaptured',branch:'Army',details:`The Kargil conflict involved infiltration and occupation of high ridgelines by irregular forces. India launched combined ground and air campaigns (Operation Vijay; IAF operation Safed Sagar) to dislodge intruders. Tough mountain warfare, precise artillery, and air strikes reclaimed strategic heights.`,youtube:'https://www.youtube.com/embed/ZTBlpUit0nA'},
+      {id:11,name:'Operation Parakram (2001–2002)',date:'Dec 2001 – Oct 2002',year:2001,location:'India-Pakistan border',lat:29,lng:75,summary:'Massive mobilization and prolonged standoff after Parliament attack — large force deployment.',result:'De-escalation without full-scale war; diplomatic resolution',branch:'Joint',details:`After the December 2001 Parliament attack, India ordered one of its largest mobilizations to coerce Pakistan into curbing cross-border terrorism. Forces were deployed for months; while conventional war was averted, the mobilization tested logistics and readiness.`,youtube:'https://www.youtube.com/embed/P4qS65iLAa0'},
+      {id:12,name:'2008 Mumbai Attacks (Operation Black Tornado)',date:'Nov 2008',year:2008,location:'Mumbai',lat:19.075,lng:72.8777,summary:'Terrorist siege across key locations; urban counter-terrorism by local & national forces.',result:'Attack neutralized; coastal & urban security overhauled',branch:'Joint',details:`The coordinated 26/11 attacks in Mumbai targeted hotels, a railway station, and public places. Security forces including the NSG, Mumbai Police and Navy executed prolonged urban counter-terror operations. The tragedy led to reforms in coastal security and counter-terror readiness.`,youtube:'https://www.youtube.com/embed/ZGZEpyYiEGc'},
+      {id:13,name:'Surgical Strikes (2016)',date:'Sept 2016',year:2016,location:'Across Line of Control',lat:33.95,lng:74,summary:'Covert cross-border strikes on militant launch-pads to degrade infiltration capability.',result:'Reportedly successful; political/diplomatic repercussions',branch:'Army',details:`Following the attack in Uri, India conducted precise special-forces raids across the Line of Control in 2016 targeting militant infrastructure. The operation was followed by public statements and strategic messaging from both sides.`,youtube:'https://www.youtube.com/embed/sMMJAIn60HI'},
+      {id:14,name:'Balakot Airstrike (2019)',date:'Feb 2019',year:2019,location:'Balakot (Pakistan)',lat:34.8686,lng:73.5,summary:'Indian Air Force strike on alleged militant camps; led to aerial engagements.',result:'Contested narratives; short period of aerial escalation',branch:'Air Force',details:`On 26 February 2019, IAF aircraft carried out strikes on militant infrastructure in Balakot, followed by aerial combat over the Kashmir theatre. The events marked a rare post-1947 aerial escalation.`,youtube:'https://www.youtube.com/embed/TCLdvpATGMs'},
+      {id:15,name:'Operation Maitri (Nepal Earthquake Relief)',date:'Apr–May 2015',year:2015,location:'Nepal',lat:28.3949,lng:84.124,summary:'Humanitarian assistance & disaster relief by Indian Armed Forces after a massive earthquake.',result:'Large-scale rescue & relief; thousands assisted',branch:'Joint',details:`After the April 2015 earthquake in Nepal, India launched Operation Maitri — a massive relief and evacuation effort involving aircraft, helicopters, medical teams and logistics. The operation showcased disaster-response capability and regional humanitarian reach.`,youtube:'https://www.youtube.com/embed/Qz9d8RrPsyY'},
+    ];
+
+    // --- UI & Rendering ---
+    const timelineEl=document.getElementById('timeline');
+    const detailCard=document.getElementById('detailCard');
+    const mapContainer=document.getElementById('map');
+    let map=null, marker=null;
+
+    function formatYearLabel(i){return `${i.date} — ${i.location}`}
+    function branchClass(b){if(b==='Army')return 'army'; if(b==='Navy')return 'navy'; if(b==='Air Force')return 'air'; return 'joint'}
+    function branchColor(b){if(b==='Army')return '#2f7a32'; if(b==='Navy')return '#0b5a7a'; if(b==='Air Force')return '#5b48b8'; return '#777'}
+    function badgeHTML(b){return `<span class="badge ${branchClass(b)}">${b}</span>`}
+
+    function buildNode(item){
+      const node=document.createElement('article');
+      node.className='node panel'; node.dataset.branch=item.branch; node.dataset.year=item.year;
+      node.innerHTML=`
+        <div class="dot" style="background:${branchColor(item.branch)}"></div>
+        <div class="content">
+          <div class="title">
+            <div>
+              <h3>${item.name}</h3>
+              <div class="meta">${formatYearLabel(item)}</div>
+            </div>
+            <div style="text-align:right">
+              <div class="tag">Outcome: ${item.result}</div>
+              <div style="margin-top:8px">${badgeHTML(item.branch)}</div>
+            </div>
+          </div>
+          <div class="summary">${item.summary}</div>
+          <div class="tags"><div class="tag">${item.year}</div><div class="tag">${item.branch}</div></div>
+          <div class="more" id="more-${item.id}">
+            <div class="meta" style="margin-top:8px">${item.details}</div>
+            <div class="video" style="margin-top:10px">
+              <p style="margin:8px 0;color:var(--muted)">Video (documentary/explainer):</p>
+              <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:10px;box-shadow:0 0 0 1px rgba(7,247,162,0.15)">
+                <iframe src="${item.youtube}" title="video" style="position:absolute;left:0;top:0;width:100%;height:100%;border:0" allowfullscreen></iframe>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      node.addEventListener('click',(e)=>{if(e.target.tagName==='IFRAME'||e.target.closest('iframe'))return;selectBattle(item.id);const more=document.getElementById(`more-${item.id}`);if(more)more.classList.toggle('open');node.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});});
+      return node;
+    }
+
+    function renderTimeline(data){timelineEl.innerHTML='';data.forEach(i=>timelineEl.appendChild(buildNode(i)))}
+
+    function currentFiltered(){
+      const checked=Array.from(document.querySelectorAll('#branchFilters input:checked')).map(i=>i.value);
+      let arr=battles.filter(b=>checked.includes(b.branch));
+      const sortVal=document.getElementById('sort').value;
+      if(sortVal==='chron')arr.sort((a,b)=>a.year-b.year); else arr.sort((a,b)=>a.branch.localeCompare(b.branch)||a.year-b.year);
+      const q=document.getElementById('search').value.trim().toLowerCase();
+      if(q)arr=arr.filter(a=>(a.name+' '+a.date+' '+a.location+' '+a.year+' '+a.details).toLowerCase().includes(q));
+      return arr;
+    }
+
+    function selectBattle(id){
+      const b=battles.find(x=>x.id===id); if(!b)return;
+      detailCard.innerHTML=`
+        <h2>${b.name}</h2>
+        <div class="meta">${b.date} — ${b.location}</div>
+        <p style="margin-top:12px">${b.details}</p>
+        <div style="margin-top:8px">Outcome: <strong>${b.result}</strong></div>
+        <div style="margin-top:8px">Branch: ${badgeHTML(b.branch)}</div>
+        <div class="video">
+          <p style="margin-top:12px;color:var(--muted)">Embedded video</p>
+          <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:10px;box-shadow:0 0 0 1px rgba(7,247,162,0.15)">
+            <iframe src="${b.youtube}" title="video" style="position:absolute;left:0;top:0;width:100%;height:100%;border:0" allowfullscreen></iframe>
+          </div>
+        </div>`;
+
+      if(b.lat&&b.lng){
+        if(map===null){mapContainer.style.display='block';map=L.map('map').setView([b.lat,b.lng],6);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:18}).addTo(map);} 
+        map.setView([b.lat,b.lng],6);
+        if(marker)marker.remove();
+        marker=L.marker([b.lat,b.lng]).addTo(map).bindPopup(`<strong>${b.name}</strong><br>${b.location}`);
+        marker.openPopup();
+      } else { if(map) mapContainer.style.display='none'; }
+    }
+
+    // Controls
+    document.getElementById('branchFilters').addEventListener('change',()=>renderTimeline(currentFiltered()));
+    document.getElementById('sort').addEventListener('change',()=>renderTimeline(currentFiltered()));
+    document.getElementById('search').addEventListener('input',()=>renderTimeline(currentFiltered()));
+    document.getElementById('clearSearch').addEventListener('click',()=>{document.getElementById('search').value='';renderTimeline(currentFiltered());});
+    document.getElementById('toggleView').addEventListener('click',()=>{const tl=document.getElementById('timeline');tl.classList.toggle('horizontal');document.getElementById('toggleView').textContent=tl.classList.contains('horizontal')?'Toggle Vertical':'Toggle Horizontal';});
+
+    // Keyboard shortcut to focus search
+    document.addEventListener('keydown',e=>{if(e.key==='/'&&document.activeElement.tagName!=='INPUT'){e.preventDefault();document.getElementById('search').focus();}});
+
+    // Initial render
+    renderTimeline(battles.slice().sort((a,b)=>a.year-b.year));
+    window.BATTLES=battles;
+  </script>
+</body>
+</html>
