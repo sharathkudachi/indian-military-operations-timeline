@@ -1,4 +1,4 @@
-🇮🇳 Indian Military Operations — Interactive Timeline
+IN Indian Military Operations — Interactive Timeline
 
 🛰️ Project Overview
 
