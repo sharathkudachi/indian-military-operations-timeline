@@ -1,5 +1,7 @@
 IN Indian Military Operations — Interactive Timeline
 
+[View Live](https://sharathkudachi.github.io/indian-military-operations-timeline/)
+
 🛰️ Project Overview
 
 Indian Military Operations — Interactive Timeline is a visually rich, interactive web application that presents major Indian military battles and strategic operations from 1947 to modern times.
